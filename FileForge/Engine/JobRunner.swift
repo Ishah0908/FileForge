@@ -380,10 +380,16 @@ final class JobRunner: ObservableObject {
             }
 
         case .pdfToWord:
+            // Extract the text ourselves (OCR-ing scans) and write the .docx
+            // directly — LibreOffice's PDF import produces a document that
+            // opens looking blank. See DocumentEngine.pdfToWord.
             return try await detached {
-                ([try DocumentEngine.pdfToOffice(input, filter: "docx:MS Word 2007 XML",
-                                                 ext: "docx", into: folder)],
-                 "Layout is reconstructed, not recovered — check formatting.")
+                let (textURL, ocrNote) = try ImageEngine.pdfToText(
+                    input, options: options, into: folder, progress: progress)
+                defer { try? FileManager.default.removeItem(at: textURL) }
+                let text = try DocumentEngine.readText(at: textURL)
+                let url = try DocumentEngine.pdfToWord(input, text: text, into: folder)
+                return ([url], "Editable text in flowing paragraphs. \(ocrNote)")
             }
 
         case .pdfToExcel:

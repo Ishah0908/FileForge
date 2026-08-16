@@ -409,35 +409,52 @@ enum DocumentEngine {
         return out
     }
 
-    /// Convert a PDF into an editable Office document.
+    /// Convert a PDF into an editable Word document.
     ///
-    /// A caveat the UI repeats, because it's the difference between a happy
-    /// user and a confused one: PDF is a layout format with no notion of
-    /// paragraphs, tables or slides, so this reconstructs structure rather
-    /// than recovering it. Text-based PDFs convert well; complex layouts and
-    /// scans come out approximate. (Run OCR first for a scan — otherwise
-    /// there's no text to convert at all.)
-    static func pdfToOffice(_ input: URL,
-                            filter: String,
-                            ext: String,
-                            into folder: URL) throws -> URL {
-        let scratch = try OutputNamer.scratchDirectory()
-        defer { try? FileManager.default.removeItem(at: scratch) }
+    /// Deliberately NOT a LibreOffice conversion. `writer_pdf_import`
+    /// reproduces the page's exact visual layout by wrapping every line in an
+    /// absolutely-positioned text frame: a real two-page payslip came through
+    /// as 388 floating text boxes containing 204 runs of text, which Word
+    /// renders stacked and overlapping, so the document **opens looking
+    /// blank**. Every word is technically in the file and none of it is
+    /// readable — indistinguishable from data loss. (LibreOffice's
+    /// `TextBoxes=false` import option is documented but has no effect here;
+    /// measured output was byte-for-byte identical.)
+    ///
+    /// The fidelity that approach buys is worthless for the actual task:
+    /// nobody converts to Word to preserve pixel positions, they convert to
+    /// edit the words. So the text is extracted with PDFKit — which orders it
+    /// correctly — and written out as real, flowing paragraphs.
+    ///
+    /// - Parameter text: already-extracted document text (the caller OCRs
+    ///   scans first, so a scanned PDF still produces a usable document).
+    static func pdfToWord(_ input: URL, text: String, into folder: URL) throws -> URL {
+        let paragraphs = text
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
 
-        // `writer_pdf_import` is load-bearing. LibreOffice opens a PDF in
-        // DRAW by default, and Draw can export neither .docx nor .xlsx — the
-        // conversion fails with "as a Draw document". Forcing the Writer
-        // import filter opens the PDF as a text document, which is the only
-        // route to an Office file. (`calc_pdf_import` does not exist; asking
-        // for it crashes soffice outright.)
-        let produced = try LibreOffice.convert(input: input,
-                                               to: filter,
-                                               inputFilter: "writer_pdf_import",
-                                               outputDirectory: scratch)
+        // Collapse runs of blank lines to a single spacer so the output
+        // doesn't inherit the PDF's page padding as dozens of empty
+        // paragraphs.
+        var cleaned: [String] = []
+        var lastWasBlank = false
+        for line in paragraphs {
+            let isBlank = line.isEmpty
+            if isBlank && lastWasBlank { continue }
+            cleaned.append(line)
+            lastWasBlank = isBlank
+        }
+        while cleaned.last?.isEmpty == true { cleaned.removeLast() }
+
+        guard cleaned.contains(where: { !$0.isEmpty }) else {
+            throw ForgeError.nothingFound(
+                "no text could be read from \(input.lastPathComponent)")
+        }
+
         let out = OutputNamer.unique(in: folder,
                                      base: input.deletingPathExtension().lastPathComponent,
-                                     ext: ext)
-        try FileManager.default.moveItem(at: produced, to: out)
+                                     ext: "docx")
+        try DOCXWriter.write(paragraphs: cleaned, title: nil, to: out)
         return out
     }
 
