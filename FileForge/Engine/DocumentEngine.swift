@@ -426,9 +426,29 @@ enum DocumentEngine {
     /// edit the words. So the text is extracted with PDFKit — which orders it
     /// correctly — and written out as real, flowing paragraphs.
     ///
-    /// - Parameter text: already-extracted document text (the caller OCRs
-    ///   scans first, so a scanned PDF still produces a usable document).
+    /// Layout IS reconstructed where the PDF carries a text layer: line
+    /// positions are read back from the page, rows and columns are recovered
+    /// from that geometry, and tables come out as real Word tables (see
+    /// `LayoutAnalyzer`). Only a scanned PDF — where the text comes from OCR
+    /// and there are no reliable positions — falls back to flowing paragraphs.
+    ///
+    /// - Parameter text: OCR text, used only for the scanned-PDF fallback.
     static func pdfToWord(_ input: URL, text: String, into folder: URL) throws -> URL {
+        let out = OutputNamer.unique(in: folder,
+                                     base: input.deletingPathExtension().lastPathComponent,
+                                     ext: "docx")
+
+        // Preferred path: the PDF has real text, so its layout is recoverable.
+        if let document = PDFDocument(url: input) {
+            let layouts = LayoutAnalyzer.analyze(document: document)
+            let hasContent = layouts.contains { !$0.blocks.isEmpty }
+            if hasContent {
+                try DOCXWriter.write(layouts: layouts, to: out)
+                return out
+            }
+        }
+
+        // Fallback: a scan. The words came from OCR, so write them as prose.
         let paragraphs = text
             .components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -451,9 +471,6 @@ enum DocumentEngine {
                 "no text could be read from \(input.lastPathComponent)")
         }
 
-        let out = OutputNamer.unique(in: folder,
-                                     base: input.deletingPathExtension().lastPathComponent,
-                                     ext: "docx")
         try DOCXWriter.write(paragraphs: cleaned, title: nil, to: out)
         return out
     }

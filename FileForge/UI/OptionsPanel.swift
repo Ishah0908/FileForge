@@ -289,7 +289,7 @@ private extension Operation {
         case .redactPDF:
             return "Matched text is removed, not just covered — those pages are flattened to images."
         case .pdfToWord:
-            return "Produces editable, flowing text rather than a pixel-perfect copy — the point is to edit the words. Original page layout isn't preserved."
+            return "Rebuilds tables and columns as editable Word tables. Column widths are sized to fit the text, so a wide table may wrap differently than the original."
         case .pdfToExcel:
             return "Columns are inferred from how the text lines up on the page. Tabular PDFs convert well; prose becomes one column."
         case .pdfToPPT:

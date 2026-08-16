@@ -76,12 +76,17 @@ hundred pages render.
 
 ## Known limits
 
-- **PDF → Word** gives you editable, flowing paragraphs, not a pixel-perfect
-  replica. This is deliberate: LibreOffice's PDF import preserves layout by
-  wrapping every line in a floating text box, which Word renders stacked and
-  overlapping — the document opens looking *blank* despite containing all the
-  text. FileForge extracts the text itself and writes the `.docx` directly, so
-  what you get is words you can actually edit. (Scans are OCR'd first.)
+- **PDF → Word** reconstructs the document's structure: line positions are read
+  back off the page, rows and columns are recovered from that geometry, and
+  tables come out as real (borderless) Word tables you can edit. It is not a
+  pixel-perfect replica — column widths are sized to fit their text, so a wide
+  table may wrap where the original didn't. Scanned PDFs, which have no
+  position data, are OCR'd and come out as flowing paragraphs.
+
+  Notably it does *not* use LibreOffice for this: LibreOffice's PDF import
+  preserves layout by wrapping every line in a floating text box, which Word
+  renders stacked and overlapping — the document opens looking **blank**
+  despite containing all the text.
 - **PDF → Excel** infers columns from how text is aligned on the page, then
   builds a real `.xlsx`. LibreOffice can't open a PDF as a spreadsheet at all,
   so this is rebuilt rather than imported: tabular PDFs convert well, prose
