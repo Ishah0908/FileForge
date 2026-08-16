@@ -387,17 +387,25 @@ final class JobRunner: ObservableObject {
             }
 
         case .pdfToExcel:
+            // Two stages: read the text (OCR-ing the page when there's no text
+            // layer), then rebuild columns and hand CSV to Calc. LibreOffice
+            // cannot open a PDF as a spreadsheet directly.
             return try await detached {
-                ([try DocumentEngine.pdfToOffice(input, filter: "xlsx:Calc MS Excel 2007 XML",
-                                                 ext: "xlsx", into: folder)],
-                 "Tables are inferred from layout — verify the cells.")
+                let (textURL, ocrNote) = try ImageEngine.pdfToText(
+                    input, options: options, into: folder, progress: progress)
+                defer { try? FileManager.default.removeItem(at: textURL) }
+                let text = try DocumentEngine.readText(at: textURL)
+                let url = try DocumentEngine.pdfToSpreadsheet(input, text: text, into: folder)
+                return ([url], "Columns inferred from layout — check the cells. \(ocrNote)")
             }
 
         case .pdfToPPT:
+            // Impress can't import a PDF either, so each page becomes a slide
+            // image — which is what a "PDF to PowerPoint" of a non-slide
+            // document honestly is.
             return try await detached {
-                ([try DocumentEngine.pdfToOffice(input, filter: "pptx:Impress MS PowerPoint 2007 XML",
-                                                 ext: "pptx", into: folder)],
-                 "Each page becomes a slide image where layout can't be parsed.")
+                let url = try DocumentEngine.pdfToSlides(input, options: options, into: folder)
+                return ([url], "Each page became a full-bleed slide image.")
             }
 
         // ── Convert to PDF ─────────────────────────────────────────────────

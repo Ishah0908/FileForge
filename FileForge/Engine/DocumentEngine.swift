@@ -424,11 +424,117 @@ enum DocumentEngine {
         let scratch = try OutputNamer.scratchDirectory()
         defer { try? FileManager.default.removeItem(at: scratch) }
 
-        let produced = try LibreOffice.convert(input: input, to: filter, outputDirectory: scratch)
+        // `writer_pdf_import` is load-bearing. LibreOffice opens a PDF in
+        // DRAW by default, and Draw can export neither .docx nor .xlsx — the
+        // conversion fails with "as a Draw document". Forcing the Writer
+        // import filter opens the PDF as a text document, which is the only
+        // route to an Office file. (`calc_pdf_import` does not exist; asking
+        // for it crashes soffice outright.)
+        let produced = try LibreOffice.convert(input: input,
+                                               to: filter,
+                                               inputFilter: "writer_pdf_import",
+                                               outputDirectory: scratch)
         let out = OutputNamer.unique(in: folder,
                                      base: input.deletingPathExtension().lastPathComponent,
                                      ext: ext)
         try FileManager.default.moveItem(at: produced, to: out)
         return out
+    }
+
+    /// Convert a PDF into a spreadsheet.
+    ///
+    /// Deliberately NOT a direct LibreOffice conversion: a PDF opens as a
+    /// Writer/Draw document, and neither can be exported to Calc — LibreOffice
+    /// answers "Unspecified Application Error" and writes nothing (and the
+    /// plausible-looking `calc_pdf_import` filter doesn't exist; requesting it
+    /// crashes soffice). There is no direct route.
+    ///
+    /// So the structure is rebuilt instead: pull the text out of the PDF, infer
+    /// column boundaries from the whitespace runs each line uses to align, emit
+    /// CSV, and let Calc turn that into a real .xlsx. Tabular PDFs come out
+    /// genuinely usable; prose comes out as one column per line, which is the
+    /// honest result for a document that has no table in it.
+    static func pdfToSpreadsheet(_ input: URL,
+                                 text: String,
+                                 into folder: URL) throws -> URL {
+        let scratch = try OutputNamer.scratchDirectory()
+        defer { try? FileManager.default.removeItem(at: scratch) }
+
+        let rows = inferColumns(from: text)
+        guard !rows.isEmpty else {
+            throw ForgeError.nothingFound("no text could be read from \(input.lastPathComponent)")
+        }
+
+        // Quote every field: cells legitimately contain commas, and a raw join
+        // would silently split them into extra columns.
+        let csv = rows.map { row in
+            row.map { "\"\($0.replacingOccurrences(of: "\"", with: "\"\""))\"" }
+               .joined(separator: ",")
+        }.joined(separator: "\n")
+
+        let csvURL = scratch.appendingPathComponent("table.csv")
+        try csv.write(to: csvURL, atomically: true, encoding: .utf8)
+
+        let produced = try LibreOffice.convert(input: csvURL,
+                                               to: "xlsx:Calc MS Excel 2007 XML",
+                                               outputDirectory: scratch)
+        let out = OutputNamer.unique(in: folder,
+                                     base: input.deletingPathExtension().lastPathComponent,
+                                     ext: "xlsx")
+        try FileManager.default.moveItem(at: produced, to: out)
+        return out
+    }
+
+    /// Convert a PDF into a PowerPoint deck, one slide per page.
+    ///
+    /// Impress can't import a PDF (same limitation as Calc), so this builds a
+    /// real .pptx directly: each page is rendered to a JPEG and placed
+    /// full-bleed on a 16:9 slide. That is the honest meaning of "PDF to
+    /// PowerPoint" for a document that was never a deck — you get an editable
+    /// file whose slides you can annotate and reorder, not reverse-engineered
+    /// text boxes that would land in the wrong place.
+    ///
+    /// Written as OOXML by hand rather than via LibreOffice: the round trip
+    /// through ODP loses the images entirely, and the format needed here is
+    /// small and fully specified.
+    static func pdfToSlides(_ input: URL,
+                            options: ConversionOptions,
+                            into folder: URL) throws -> URL {
+        let scratch = try OutputNamer.scratchDirectory()
+        defer { try? FileManager.default.removeItem(at: scratch) }
+
+        // Render pages at presentation resolution.
+        var slideOptions = options
+        slideOptions.dpi = max(110, min(options.dpi, 200))
+        slideOptions.pageRange = options.pageRange
+        let images = try ImageEngine.pdfToImages(input, format: .jpeg,
+                                                 options: slideOptions,
+                                                 into: scratch, progress: { _ in })
+        guard !images.isEmpty else { throw ForgeError.noPagesSelected }
+
+        let out = OutputNamer.unique(in: folder,
+                                     base: input.deletingPathExtension().lastPathComponent,
+                                     ext: "pptx")
+        try PPTXWriter.write(imageURLs: images, to: out)
+        return out
+    }
+
+    /// Split each line into cells on runs of two or more spaces.
+    ///
+    /// A single space is almost always a word break; two or more is how
+    /// extracted PDF text represents the gap between columns, because the
+    /// original was aligned by position rather than by delimiter. Tabs are
+    /// treated as hard column breaks wherever they appear.
+    private static func inferColumns(from text: String) -> [[String]] {
+        text.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .map { line in
+                line.replacingOccurrences(of: "\t", with: "  ")
+                    .components(separatedBy: "  ")
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty }
+            }
+            .filter { !$0.isEmpty }
     }
 }

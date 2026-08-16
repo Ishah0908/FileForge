@@ -196,8 +196,15 @@ enum LibreOffice {
     /// conversion never collides with a LibreOffice window the user has open —
     /// without it, soffice refuses to start a second instance and the job
     /// hangs forever.
+    /// - Parameter inputFilter: LibreOffice import filter, e.g.
+    ///   `"writer_pdf_import"`. Required when the input's own type would open
+    ///   in the wrong application: a PDF defaults to **Draw**, and Draw can't
+    ///   export Word or Excel, so PDF → .docx fails outright without this.
+    ///   Forcing the Writer import filter opens the PDF as a text document,
+    ///   which is what makes that conversion possible at all.
     static func convert(input: URL,
                         to filter: String,
+                        inputFilter: String? = nil,
                         outputDirectory: URL,
                         timeout: TimeInterval = 180) throws -> URL {
         guard let soffice = executable else { throw ForgeError.libreOfficeMissing }
@@ -205,13 +212,14 @@ enum LibreOffice {
         let profile = outputDirectory.appendingPathComponent("lo-profile", isDirectory: true)
         let process = Process()
         process.executableURL = soffice
-        process.arguments = [
+        var arguments = [
             "-env:UserInstallation=file://\(profile.path)",
             "--headless", "--norestore", "--invisible",
-            "--convert-to", filter,
-            "--outdir", outputDirectory.path,
-            input.path
+            "--convert-to", filter
         ]
+        if let inputFilter { arguments.append("--infilter=\(inputFilter)") }
+        arguments += ["--outdir", outputDirectory.path, input.path]
+        process.arguments = arguments
 
         let pipe = Pipe()
         process.standardOutput = pipe

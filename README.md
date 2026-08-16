@@ -37,10 +37,10 @@ a stranger's server for a 20-second job.
 ## Requirements
 
 - macOS 15 (Sequoia) or later
-- **LibreOffice** — only for the Office formats (`.docx`/`.xlsx`/`.pptx`/ODF/EPUB).
-  macOS has no API to read those, so they're delegated to LibreOffice, which
-  the app detects at runtime. The affected tools are flagged with a ⚠️ in the
-  sidebar until it's installed.
+- **LibreOffice** — only for the Office formats (`.docx`/`.xlsx`/`.pptx`/ODF/EPUB)
+  and PDF → Word/Excel. macOS has no API to read those, so they're delegated to
+  LibreOffice, which the app detects at runtime. The affected tools are flagged
+  with a ⚠️ in the sidebar until it's installed.
 
   ```bash
   brew install --cask libreoffice
@@ -76,10 +76,16 @@ hundred pages render.
 
 ## Known limits
 
-- **PDF → Word/Excel/PowerPoint** reconstructs structure rather than recovering
-  it — PDF has no notion of paragraphs, tables or slides. Text-based PDFs come
-  out well; complex layouts need tidying. Run OCR first on a scan, or there's
-  no text to convert at all.
+- **PDF → Word** reconstructs structure rather than recovering it — PDF has no
+  notion of paragraphs. Text-based PDFs come out well; complex layouts need
+  tidying. (Scans are OCR'd automatically first, so there's text to convert.)
+- **PDF → Excel** infers columns from how text is aligned on the page, then
+  builds a real `.xlsx`. LibreOffice can't open a PDF as a spreadsheet at all,
+  so this is rebuilt rather than imported: tabular PDFs convert well, prose
+  becomes a single column.
+- **PDF → PowerPoint** makes one full-bleed slide per page. Impress can't
+  import PDFs either, so FileForge writes the `.pptx` directly — you get an
+  editable deck, not text boxes guessed from a layout.
 - **PDF/A** is an archival-style export (self-contained, metadata stamped), not
   a certified PDF/A-1b conversion — full compliance needs embedded ICC output
   intents and font subsets, which requires Ghostscript.

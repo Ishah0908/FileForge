@@ -288,8 +288,12 @@ private extension Operation {
             return "Pages become images, so text stops being selectable. Best for scans and photo-heavy PDFs."
         case .redactPDF:
             return "Matched text is removed, not just covered — those pages are flattened to images."
-        case .pdfToWord, .pdfToExcel, .pdfToPPT:
-            return "PDF has no paragraphs or tables to recover, so structure is reconstructed. Expect to tidy the result."
+        case .pdfToWord:
+            return "PDF has no paragraphs to recover, so structure is reconstructed. Expect to tidy the result."
+        case .pdfToExcel:
+            return "Columns are inferred from how the text lines up on the page. Tabular PDFs convert well; prose becomes one column."
+        case .pdfToPPT:
+            return "Each page becomes a full-bleed slide image — editable as a deck, but not reverse-engineered into text boxes."
         case .pdfToPDFA:
             return "Archival-style export. Certified PDF/A-1b validation needs Ghostscript."
         case .pdfOCR:
